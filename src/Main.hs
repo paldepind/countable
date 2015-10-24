@@ -1,8 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
+-- {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators #-}
 module Main where
 
 import           Control.Monad.Logger (runNoLoggingT, runStdoutLoggingT)
@@ -21,6 +23,7 @@ import           Web.Spock.Safe
 import           Web.Users.Persistent
 import           Web.Users.Types
 import Data.HVect hiding (pack)
+import Control.Monad
 
 import           Models
 
@@ -66,8 +69,16 @@ authenticateSession = do
                   text "No session token provided"
 
 initHook :: (Monad m) => ActionCtxT () m (HVect '[])
--- initHook :: App
 initHook = return HNil
+
+authHook :: AppAction (HVect xs) sess (HVect (UserId Persistent ': xs))
+authHook = do oldCtx <- getContext
+              user <- authenticateSession
+              return (user :&: oldCtx)
+
+getUserId :: ListContains n (UserId Persistent) xs => AppAction (HVect xs) sess (UserId Persistent)
+getUserId = do (userId :: UserId Persistent) <- liftM findFirst getContext
+               return userId
 
 countableApp :: SpockCtxM () Sql.SqlBackend ses AppState ()
 countableApp = 
@@ -90,33 +101,34 @@ countableApp =
       text $ maybe "Authentication failed" unSessionId session
 
     -- Counters
-    get "api/counters" $ do
-      userId <- authenticateSession          
-      counters <- runDb $ selectList [CounterUserId ==. userId] []
-      json (counters :: [Entity Counter])
+    prehook authHook $
+      do get "api/counters" $ do
+           userId <- getUserId
+           counters <- runDb $ selectList [CounterUserId ==. userId] []
+           json (counters :: [Entity Counter])
 
-    post "api/counters" createCounterAction
+         post "api/counters" createCounterAction
 
-    get ("api/counters" <//> var) $ \counterId ->
-      do userId <- authenticateSession          
-         maybeCounter <- runDb $ Sql.get (Sql.toSqlKey counterId)
-         case maybeCounter of
-           Just counter -> do
-             if (counterUserId counter) == userId
-                then json (counter :: Counter)
-                else setStatus status401 >> text ""
-           Nothing -> do
-             setStatus status404
-             text "Counter not found"
+         get ("api/counters" <//> var) $ \counterId ->
+           do userId <- getUserId
+              maybeCounter <- runDb $ Sql.get (Sql.toSqlKey counterId)
+              case maybeCounter of
+                Just counter -> do
+                  if (counterUserId counter) == userId
+                     then json (counter :: Counter)
+                     else setStatus status401 >> text ""
+                Nothing -> do
+                  setStatus status404
+                  text "Counter not found"
 
-    get ("api/counters" <//> var <//> "counts") $ \counterId ->
-      do userId <- authenticateSession
-         counts <- runDb $ selectList [CountCountedForId ==. counterId] []
-         json (counts :: [Entity Count])
+         get ("api/counters" <//> var <//> "counts") $ \counterId ->
+           do userId <- getUserId
+              counts <- runDb $ selectList [CountCountedForId ==. counterId] []
+              json (counts :: [Entity Count])
 
-createCounterAction :: AppAction ctx sess c
+createCounterAction :: AppAction (HVect '[LoginId]) sess c
 createCounterAction = do
-    userId <- authenticateSession
+    userId <- getUserId
     newCounter <- jsonBody'
     let counter = Counter (Main.name (newCounter :: NewCounter)) userId
     counterId <- runDb $ insert (counter :: Counter)
