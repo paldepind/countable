@@ -6,24 +6,25 @@
 {-# LANGUAGE TypeOperators #-}
 module Main where
 
+import           Control.Monad
 import           Control.Monad.Logger (runNoLoggingT, runStdoutLoggingT)
 import           Control.Monad.Trans
 import qualified Data.Aeson as A
+import           Data.HVect hiding (pack)
 import           Data.Monoid
-import           Data.Time.Clock (NominalDiffTime)
 import           Data.Text (Text, pack)
+import           Data.Time.Clock (NominalDiffTime)
 import Database.Persist.Postgresql (ConnectionPool, createPostgresqlPool, ConnectionString,
                                     runSqlPool, getBy, insert, selectList, Entity(..), (==.),
                                     fromSqlKey)
 import qualified Database.Persist.Sql as Sql
 import           GHC.Generics (Generic)
+import           GHC.Int (Int64)
 import           Network.HTTP.Types.Status
-import           Web.Spock.Safe
+import           Network.Wai.Middleware.Static (staticPolicy, addBase)
+import           Web.Spock.Safe hiding (static)
 import           Web.Users.Persistent
 import           Web.Users.Types
-import Data.HVect hiding (pack)
-import Control.Monad
-import GHC.Int (Int64)
 
 import           Models
 
@@ -54,7 +55,7 @@ data NewCounter = NewCounter { name :: String
 instance A.FromJSON NewCounter
 
 sessionDur :: NominalDiffTime
-sessionDur = 60 * 60 -- An hour
+sessionDur = 7 * 24 * 60 * 60 -- A week
 
 authenticateSession :: AppAction ctx sess (UserId Persistent)
 authenticateSession = do
@@ -83,7 +84,9 @@ getUserId = do (userId :: UserId Persistent) <- liftM findFirst getContext
 countableApp :: SpockCtxM () Sql.SqlBackend ses AppState ()
 countableApp = 
   prehook initHook $
-  do post "api/users" createUserRoute
+  do middleware $ staticPolicy (addBase "client/source.jsexe/")
+     get root $ file "text/html" "client/source.jsexe/index.html"
+     post "api/users" createUserRoute
      post "api/login" loginRoute
      prehook authHook $
        do get "api/counters" getCounters
