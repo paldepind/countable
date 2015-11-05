@@ -106,8 +106,12 @@ createUserRoute =
 
 loginRoute = 
   do login <- jsonBody'
-     session <- runUser (\b -> authUser b (username login) (PasswordPlain . password $ login) sessionDur)
-     text $ maybe "Authentication failed" unSessionId session
+     maybeSession <- runUser (\b -> authUser b (username login) (PasswordPlain . password $ login) sessionDur)
+     case maybeSession of
+       Just session -> text $ unSessionId session
+       Nothing -> do
+         setStatus status401
+         text "Authentication failed"
 
 getCounters :: ListContains n (UserId Persistent) xs => AppAction (HVect xs) sess ()
 getCounters = do
