@@ -84,12 +84,6 @@ main = mainWidget $ el "div" $ do
         display counters
     return ()
   display =<< foldDyn (const (+1)) 0 submit
-  (submitAppend, appendText) <- form $ do
-    appendText <- textInput def
-    button "Append"
-    return appendText
-  appendText <- return $ tag (current (_textInput_value appendText)) submitAppend
-  display =<< foldDyn (++) "" appendText
   (login, creds) <- form $ do
     rec loginCredentials <- combineDyn Login (_textInput_value username) (_textInput_value password)
         username <- textInput def
