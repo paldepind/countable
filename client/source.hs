@@ -67,23 +67,21 @@ form child = do
   return (submit, ch)
 
 main = mainWidget $ el "div" $ do
-  (submit, _) <- form $ do
+  (_, createCounterName) <- form $ do
     rec newCounterInput <- textInput $ def & setValue .~ fmap (const "") createCounterBtn
         createCounterBtn <- button "Create counter"
-        createCounterName <- return $ tag (current (_textInput_value newCounterInput)) createCounterBtn
-        counters <- foldDyn ($) initCounters $ mergeWith (.)
-                           [ fmap (insertNew_ . createCounter) createCounterName
-                          , counterInc
-                          ]
-        el "br" blank
-        counterEvents <- el "div" $ list counters displayCounter
-        let combineIncrements = fmap (Map.foldWithKey (\k mod f -> f . Map.adjust mod k) id) . mergeMap
-        counterIncrement <- mapDyn combineIncrements counterEvents
-        let counterInc = switch . current $ counterIncrement
-        el "br" blank
-        display counters
-    return ()
-  display =<< foldDyn (const (+1)) 0 submit
+    return $ tag (current (_textInput_value newCounterInput)) createCounterBtn
+  rec counters <- foldDyn ($) initCounters $ mergeWith (.)
+                        [ fmap (insertNew_ . createCounter) createCounterName
+                        , counterInc
+                        ]
+      el "br" blank
+      counterEvents <- el "div" $ list counters displayCounter
+      let combineIncrements = fmap (Map.foldWithKey (\k mod f -> f . Map.adjust mod k) id) . mergeMap
+      counterIncrement <- mapDyn combineIncrements counterEvents
+      let counterInc = switch . current $ counterIncrement
+  el "br" blank
+  display counters
   (login, creds) <- form $ do
     rec loginCredentials <- combineDyn Login (_textInput_value username) (_textInput_value password)
         username <- textInput def
@@ -97,7 +95,7 @@ main = mainWidget $ el "div" $ do
   el "br" blank
 
 postJson :: (ToJSON a) => String -> a -> XhrRequest
-postJson url a = 
+postJson url a =
   XhrRequest "POST" url $ def { _xhrRequestConfig_headers = headerUrlEnc
                               , _xhrRequestConfig_sendData = Just body
                               }
